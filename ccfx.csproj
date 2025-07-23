@@ -1,0 +1,30 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    
+    <!-- NuGet Package Information -->
+    <PackageId>ccfx</PackageId>
+    <Version>1.1.0</Version>
+    <Authors>Celray James CHAWANDA</Authors>
+    <Company>Chawanda</Company>
+    <Description>A C# utility library containing functions to speed general development and prototyping. Includes file operations, directory management, network utilities, compression, monitoring, and system commands. Ported from the popular Python ccfx library.</Description>
+    <PackageTags>utility;files;system;development;helper;tools;network;compression;monitoring</PackageTags>
+    <PackageProjectUrl>https://github.com/celray/ccfx</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/celray/ccfx</RepositoryUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.IO.Compression" Version="4.3.0" />
+  </ItemGroup>
+
+</Project>
