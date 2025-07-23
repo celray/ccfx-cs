@@ -126,8 +126,8 @@ Fx.Uncompress("archive.zip", "./extracted");
 
 ```bash
 # Clone the repository
-git clone https://github.com/celray/ccfx.git
-cd ccfx
+git clone https://github.com/celray/ccfx-cs.git
+cd ccfx-cs
 
 # Build the project
 dotnet build

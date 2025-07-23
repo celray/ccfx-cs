@@ -12,7 +12,7 @@ namespace ccfx;
 /// Author: Celray James CHAWANDA
 /// Email: celray@chawanda.com
 /// License: MIT
-/// Repository: https://github.com/celray/ccfx
+/// Repository: https://github.com/celray/ccfx-cs
 /// </summary>
 public static class Fx
 {
