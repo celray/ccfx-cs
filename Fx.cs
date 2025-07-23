@@ -947,4 +947,1331 @@ public static class Fx
 
         return deletedCount;
     }
+
+    /// <summary>
+    /// Serialize an object to a file using binary serialization
+    /// </summary>
+    /// <param name="obj">Object to serialize</param>
+    /// <param name="filePath">File path to save to</param>
+    /// <param name="verbose">Verbose output (default is false)</param>
+    /// <returns>True if successful, false otherwise</returns>
+    public static bool SaveVariable<T>(T obj, string filePath, bool verbose = false)
+    {
+        try
+        {
+            CreatePath(Path.GetDirectoryName(filePath) ?? "");
+            
+            using var stream = new FileStream(filePath, FileMode.Create);
+            using var writer = new BinaryWriter(stream);
+            
+            var json = System.Text.Json.JsonSerializer.Serialize(obj);
+            writer.Write(json);
+            
+            if (verbose)
+                Console.WriteLine($"> saved variable to {GetFileBaseName(filePath, true)}");
+                
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"! error saving variable to {filePath}: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Deserialize an object from a file using binary serialization
+    /// </summary>
+    /// <param name="filePath">File path to load from</param>
+    /// <param name="verbose">Verbose output (default is false)</param>
+    /// <returns>Deserialized object or default value if failed</returns>
+    public static T? LoadVariable<T>(string filePath, bool verbose = false)
+    {
+        try
+        {
+            if (!File.Exists(filePath))
+            {
+                if (verbose)
+                    Console.WriteLine($"! file {filePath} does not exist");
+                return default;
+            }
+            
+            using var stream = new FileStream(filePath, FileMode.Open);
+            using var reader = new BinaryReader(stream);
+            
+            var json = reader.ReadString();
+            var obj = System.Text.Json.JsonSerializer.Deserialize<T>(json);
+            
+            if (verbose)
+                Console.WriteLine($"> loaded variable from {GetFileBaseName(filePath, true)}");
+                
+            return obj;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"! error loading variable from {filePath}: {ex.Message}");
+            return default;
+        }
+    }
+
+    /// <summary>
+    /// Calculate basic statistics for two datasets (observed vs simulated)
+    /// </summary>
+    /// <param name="observed">Observed values</param>
+    /// <param name="simulated">Simulated values</param>
+    /// <returns>Dictionary containing statistical metrics</returns>
+    public static Dictionary<string, double> CalculateStats(double[] observed, double[] simulated)
+    {
+        if (observed.Length != simulated.Length)
+            throw new ArgumentException("observed and simulated arrays must have the same length");
+
+        var stats = new Dictionary<string, double>();
+        
+        try
+        {
+            int n = observed.Length;
+            
+            // Filter out NaN values
+            var validPairs = new List<(double obs, double sim)>();
+            for (int i = 0; i < n; i++)
+            {
+                if (!double.IsNaN(observed[i]) && !double.IsNaN(simulated[i]))
+                    validPairs.Add((observed[i], simulated[i]));
+            }
+            
+            if (validPairs.Count == 0)
+            {
+                foreach (var key in new[] { "r2", "rmse", "mae", "mse", "mape", "nse", "pbias" })
+                    stats[key] = double.NaN;
+                return stats;
+            }
+            
+            var obs = validPairs.Select(p => p.obs).ToArray();
+            var sim = validPairs.Select(p => p.sim).ToArray();
+            
+            double obsMean = obs.Average();
+            double simMean = sim.Average();
+            
+            // R-squared (coefficient of determination)
+            double ssRes = obs.Zip(sim, (o, s) => Math.Pow(o - s, 2)).Sum();
+            double ssTot = obs.Select(o => Math.Pow(o - obsMean, 2)).Sum();
+            stats["r2"] = ssTot != 0 ? 1 - (ssRes / ssTot) : double.NaN;
+            
+            // Root Mean Square Error (RMSE)
+            stats["rmse"] = Math.Sqrt(obs.Zip(sim, (o, s) => Math.Pow(o - s, 2)).Average());
+            
+            // Mean Absolute Error (MAE)
+            stats["mae"] = obs.Zip(sim, (o, s) => Math.Abs(o - s)).Average();
+            
+            // Mean Square Error (MSE)
+            stats["mse"] = obs.Zip(sim, (o, s) => Math.Pow(o - s, 2)).Average();
+            
+            // Mean Absolute Percentage Error (MAPE)
+            var mapeValues = obs.Zip(sim, (o, s) => o != 0 ? Math.Abs((o - s) / o) * 100 : 0).ToArray();
+            stats["mape"] = mapeValues.Average();
+            
+            // Nash-Sutcliffe Efficiency (NSE)
+            double denominator = obs.Select(o => Math.Pow(o - obsMean, 2)).Sum();
+            stats["nse"] = denominator != 0 ? 1 - ssRes / denominator : double.NaN;
+            
+            // Percent Bias (PBIAS)
+            double obsSum = obs.Sum();
+            stats["pbias"] = obsSum != 0 ? 100 * (sim.Sum() - obsSum) / obsSum : double.NaN;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"! error calculating statistics: {ex.Message}");
+            foreach (var key in new[] { "r2", "rmse", "mae", "mse", "mape", "nse", "pbias" })
+                stats[key] = double.NaN;
+        }
+        
+        return stats;
+    }
+
+    /// <summary>
+    /// Calculate correlation coefficient between two datasets
+    /// </summary>
+    /// <param name="x">First dataset</param>
+    /// <param name="y">Second dataset</param>
+    /// <returns>Pearson correlation coefficient</returns>
+    public static double CalculateCorrelation(double[] x, double[] y)
+    {
+        if (x.Length != y.Length)
+            throw new ArgumentException("arrays must have the same length");
+
+        try
+        {
+            double meanX = x.Average();
+            double meanY = y.Average();
+            
+            double numerator = x.Zip(y, (xi, yi) => (xi - meanX) * (yi - meanY)).Sum();
+            double denominatorX = x.Select(xi => Math.Pow(xi - meanX, 2)).Sum();
+            double denominatorY = y.Select(yi => Math.Pow(yi - meanY, 2)).Sum();
+            
+            double denominator = Math.Sqrt(denominatorX * denominatorY);
+            
+            return denominator != 0 ? numerator / denominator : double.NaN;
+        }
+        catch
+        {
+            return double.NaN;
+        }
+    }
+
+    /// <summary>
+    /// Convert bytes to human-readable format with different units
+    /// </summary>
+    /// <param name="bytes">Number of bytes</param>
+    /// <param name="useBinaryUnits">Use binary units (1024) instead of decimal (1000)</param>
+    /// <param name="decimalPlaces">Number of decimal places (default is 2)</param>
+    /// <returns>Formatted string</returns>
+    public static string FormatBytesAdvanced(long bytes, bool useBinaryUnits = true, int decimalPlaces = 2)
+    {
+        if (bytes == 0) return "0 B";
+
+        string[] decimalSizes = { "B", "KB", "MB", "GB", "TB", "PB" };
+        string[] binarySizes = { "B", "KiB", "MiB", "GiB", "TiB", "PiB" };
+        
+        double divisor = useBinaryUnits ? 1024.0 : 1000.0;
+        string[] sizes = useBinaryUnits ? binarySizes : decimalSizes;
+        
+        int order = 0;
+        double size = bytes;
+
+        while (size >= divisor && order < sizes.Length - 1)
+        {
+            order++;
+            size /= divisor;
+        }
+
+        return $"{Math.Round(size, decimalPlaces)} {sizes[order]}";
+    }
+
+    /// <summary>
+    /// Generate a random string with specified length and character set
+    /// </summary>
+    /// <param name="length">Length of the string</param>
+    /// <param name="includeNumbers">Include numbers (default is true)</param>
+    /// <param name="includeUppercase">Include uppercase letters (default is true)</param>
+    /// <param name="includeLowercase">Include lowercase letters (default is true)</param>
+    /// <param name="includeSpecialChars">Include special characters (default is false)</param>
+    /// <returns>Random string</returns>
+    public static string GenerateRandomString(int length, bool includeNumbers = true, 
+        bool includeUppercase = true, bool includeLowercase = true, bool includeSpecialChars = false)
+    {
+        var chars = "";
+        
+        if (includeLowercase) chars += "abcdefghijklmnopqrstuvwxyz";
+        if (includeUppercase) chars += "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        if (includeNumbers) chars += "0123456789";
+        if (includeSpecialChars) chars += "!@#$%^&*()_+-=[]{}|;:,.<>?";
+        
+        if (string.IsNullOrEmpty(chars))
+            chars = "abcdefghijklmnopqrstuvwxyz";
+        
+        var random = new Random();
+        return new string(Enumerable.Repeat(chars, length)
+            .Select(s => s[random.Next(s.Length)]).ToArray());
+    }
+
+    /// <summary>
+    /// Create a timestamped backup of a file
+    /// </summary>
+    /// <param name="filePath">Original file path</param>
+    /// <param name="backupDir">Backup directory (optional, defaults to same directory)</param>
+    /// <param name="verbose">Verbose output (default is true)</param>
+    /// <returns>Path to the backup file, or null if failed</returns>
+    public static string? CreateBackup(string filePath, string? backupDir = null, bool verbose = true)
+    {
+        try
+        {
+            if (!File.Exists(filePath))
+            {
+                if (verbose)
+                    Console.WriteLine($"! source file {filePath} does not exist");
+                return null;
+            }
+            
+            backupDir ??= Path.GetDirectoryName(filePath) ?? "./";
+            CreatePath(backupDir);
+            
+            var fileName = Path.GetFileNameWithoutExtension(filePath);
+            var extension = Path.GetExtension(filePath);
+            var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            
+            var backupFileName = $"{fileName}_backup_{timestamp}{extension}";
+            var backupPath = Path.Combine(backupDir, backupFileName);
+            
+            File.Copy(filePath, backupPath);
+            
+            if (verbose)
+                Console.WriteLine($"> created backup: {backupPath}");
+                
+            return backupPath;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"! error creating backup: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Find duplicate files in a directory based on file content hash
+    /// </summary>
+    /// <param name="directoryPath">Directory to search</param>
+    /// <param name="recursive">Search subdirectories (default is true)</param>
+    /// <param name="verbose">Verbose output (default is false)</param>
+    /// <returns>Dictionary where key is hash and value is list of file paths with that hash</returns>
+    public static Dictionary<string, List<string>> FindDuplicateFiles(string directoryPath, bool recursive = true, bool verbose = false)
+    {
+        var duplicates = new Dictionary<string, List<string>>();
+        
+        try
+        {
+            var searchOption = recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
+            var files = Directory.GetFiles(directoryPath, "*", searchOption);
+            
+            if (verbose)
+                Console.WriteLine($"> scanning {files.Length} files for duplicates...");
+            
+            using var sha256 = System.Security.Cryptography.SHA256.Create();
+            
+            foreach (var file in files)
+            {
+                try
+                {
+                    using var stream = File.OpenRead(file);
+                    var hash = Convert.ToBase64String(sha256.ComputeHash(stream));
+                    
+                    if (!duplicates.ContainsKey(hash))
+                        duplicates[hash] = new List<string>();
+                    
+                    duplicates[hash].Add(file);
+                }
+                catch (Exception ex)
+                {
+                    if (verbose)
+                        Console.WriteLine($"! error processing {file}: {ex.Message}");
+                }
+            }
+            
+            // Remove entries with only one file (not duplicates)
+            var actualDuplicates = duplicates.Where(kvp => kvp.Value.Count > 1)
+                                             .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+            
+            if (verbose)
+                Console.WriteLine($"> found {actualDuplicates.Count} sets of duplicate files");
+                
+            return actualDuplicates;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"! error finding duplicates: {ex.Message}");
+            return new Dictionary<string, List<string>>();
+        }
+    }
+
+    /// <summary>
+    /// Monitor a directory for file changes
+    /// </summary>
+    /// <param name="directoryPath">Directory to monitor</param>
+    /// <param name="filter">File filter pattern (default is "*.*")</param>
+    /// <param name="includeSubdirectories">Monitor subdirectories (default is false)</param>
+    /// <param name="onChanged">Action to execute when file changes</param>
+    /// <param name="verbose">Verbose output (default is true)</param>
+    /// <returns>FileSystemWatcher instance</returns>
+    public static FileSystemWatcher? MonitorDirectory(string directoryPath, string filter = "*.*", 
+        bool includeSubdirectories = false, Action<string>? onChanged = null, bool verbose = true)
+    {
+        try
+        {
+            if (!Directory.Exists(directoryPath))
+            {
+                if (verbose)
+                    Console.WriteLine($"! directory {directoryPath} does not exist");
+                return null;
+            }
+            
+            var watcher = new FileSystemWatcher(directoryPath, filter)
+            {
+                IncludeSubdirectories = includeSubdirectories,
+                EnableRaisingEvents = true
+            };
+            
+            watcher.Changed += (sender, e) =>
+            {
+                if (verbose)
+                    Console.WriteLine($"> file changed: {e.FullPath}");
+                onChanged?.Invoke(e.FullPath);
+            };
+            
+            watcher.Created += (sender, e) =>
+            {
+                if (verbose)
+                    Console.WriteLine($"> file created: {e.FullPath}");
+                onChanged?.Invoke(e.FullPath);
+            };
+            
+            watcher.Deleted += (sender, e) =>
+            {
+                if (verbose)
+                    Console.WriteLine($"> file deleted: {e.FullPath}");
+                onChanged?.Invoke(e.FullPath);
+            };
+            
+            if (verbose)
+                Console.WriteLine($"> monitoring {directoryPath} for changes...");
+                
+            return watcher;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"! error setting up directory monitor: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Execute a shell command asynchronously with timeout support
+    /// </summary>
+    /// <param name="command">Command to execute</param>
+    /// <param name="arguments">Command arguments (optional)</param>
+    /// <param name="workingDirectory">Working directory (optional)</param>
+    /// <param name="timeoutMs">Timeout in milliseconds (default is 30000ms)</param>
+    /// <param name="verbose">Verbose output (default is false)</param>
+    /// <returns>Tuple containing (exitCode, output, error)</returns>
+    public static async Task<(int exitCode, string output, string error)> RunCommandAsync(string command, 
+        string? arguments = null, string? workingDirectory = null, int timeoutMs = 30000, bool verbose = false)
+    {
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = command,
+                Arguments = arguments ?? "",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            if (!string.IsNullOrEmpty(workingDirectory))
+                startInfo.WorkingDirectory = workingDirectory;
+
+            if (verbose)
+                Console.WriteLine($"> running async: {command} {arguments}");
+
+            using var process = new Process { StartInfo = startInfo };
+            process.Start();
+
+            var outputTask = process.StandardOutput.ReadToEndAsync();
+            var errorTask = process.StandardError.ReadToEndAsync();
+
+            var completed = await Task.WhenAny(
+                Task.WhenAll(outputTask, errorTask),
+                Task.Delay(timeoutMs)
+            );
+
+            if (completed == Task.WhenAll(outputTask, errorTask))
+            {
+                await process.WaitForExitAsync();
+                string output = await outputTask;
+                string error = await errorTask;
+
+                if (verbose && !string.IsNullOrEmpty(output))
+                    Console.WriteLine($"output: {output}");
+                if (verbose && !string.IsNullOrEmpty(error))
+                    Console.WriteLine($"error: {error}");
+
+                return (process.ExitCode, output, error);
+            }
+            else
+            {
+                process.Kill();
+                return (-1, "", "command timed out");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"! error running async command: {ex.Message}");
+            return (-1, "", ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Safely read a text file with automatic encoding detection
+    /// </summary>
+    /// <param name="filePath">Path to the file</param>
+    /// <param name="verbose">Verbose output (default is false)</param>
+    /// <returns>File contents as string, or null if failed</returns>
+    public static string? ReadTextFile(string filePath, bool verbose = false)
+    {
+        try
+        {
+            if (!File.Exists(filePath))
+            {
+                if (verbose)
+                    Console.WriteLine($"! file {filePath} does not exist");
+                return null;
+            }
+
+            // Try UTF-8 first, then fallback to system default
+            try
+            {
+                var content = File.ReadAllText(filePath, Encoding.UTF8);
+                if (verbose)
+                    Console.WriteLine($"> read {GetFileBaseName(filePath, true)} as UTF-8");
+                return content;
+            }
+            catch
+            {
+                var content = File.ReadAllText(filePath, Encoding.Default);
+                if (verbose)
+                    Console.WriteLine($"> read {GetFileBaseName(filePath, true)} as {Encoding.Default.EncodingName}");
+                return content;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"! error reading {filePath}: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Write text to file with atomic operation (write to temp file first, then move)
+    /// </summary>
+    /// <param name="filePath">Target file path</param>
+    /// <param name="content">Content to write</param>
+    /// <param name="encoding">Text encoding (optional, defaults to UTF-8)</param>
+    /// <param name="verbose">Verbose output (default is false)</param>
+    /// <returns>True if successful, false otherwise</returns>
+    public static bool WriteTextFileAtomic(string filePath, string content, Encoding? encoding = null, bool verbose = false)
+    {
+        try
+        {
+            encoding ??= Encoding.UTF8;
+            
+            CreatePath(Path.GetDirectoryName(filePath) ?? "");
+            
+            var tempPath = filePath + ".tmp";
+            
+            File.WriteAllText(tempPath, content, encoding);
+            
+            // Atomic move
+            if (File.Exists(filePath))
+                File.Delete(filePath);
+            File.Move(tempPath, filePath);
+            
+            if (verbose)
+                Console.WriteLine($"> atomically wrote {GetFileBaseName(filePath, true)}");
+                
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"! error writing {filePath}: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Get disk space information for a directory
+    /// </summary>
+    /// <param name="directoryPath">Directory path</param>
+    /// <returns>Tuple containing (totalBytes, freeBytes, usedBytes)</returns>
+    public static (long totalBytes, long freeBytes, long usedBytes) GetDiskSpace(string directoryPath)
+    {
+        try
+        {
+            var drive = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(directoryPath)) ?? "C:");
+            var totalBytes = drive.TotalSize;
+            var freeBytes = drive.AvailableFreeSpace;
+            var usedBytes = totalBytes - freeBytes;
+            
+            return (totalBytes, freeBytes, usedBytes);
+        }
+        catch
+        {
+            return (-1, -1, -1);
+        }
+    }
+
+    /// <summary>
+    /// Convert a CSV file to a simple dictionary structure
+    /// </summary>
+    /// <param name="csvFilePath">Path to CSV file</param>
+    /// <param name="hasHeader">Whether the first row contains headers (default is true)</param>
+    /// <param name="delimiter">CSV delimiter (default is comma)</param>
+    /// <param name="verbose">Verbose output (default is false)</param>
+    /// <returns>List of dictionaries representing rows, or null if failed</returns>
+    public static List<Dictionary<string, string>>? ReadCsv(string csvFilePath, bool hasHeader = true, 
+        char delimiter = ',', bool verbose = false)
+    {
+        try
+        {
+            var lines = File.ReadAllLines(csvFilePath);
+            if (lines.Length == 0)
+                return new List<Dictionary<string, string>>();
+
+            var result = new List<Dictionary<string, string>>();
+            string[] headers;
+            int startIndex;
+
+            if (hasHeader)
+            {
+                headers = lines[0].Split(delimiter);
+                startIndex = 1;
+            }
+            else
+            {
+                var firstLine = lines[0].Split(delimiter);
+                headers = Enumerable.Range(0, firstLine.Length).Select(i => $"column{i}").ToArray();
+                startIndex = 0;
+            }
+
+            for (int i = startIndex; i < lines.Length; i++)
+            {
+                var values = lines[i].Split(delimiter);
+                var row = new Dictionary<string, string>();
+                
+                for (int j = 0; j < Math.Min(headers.Length, values.Length); j++)
+                {
+                    row[headers[j]] = values[j].Trim();
+                }
+                
+                result.Add(row);
+            }
+
+            if (verbose)
+                Console.WriteLine($"> read {result.Count} rows from {GetFileBaseName(csvFilePath, true)}");
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"! error reading CSV {csvFilePath}: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Write data to a CSV file
+    /// </summary>
+    /// <param name="csvFilePath">Path to output CSV file</param>
+    /// <param name="data">List of dictionaries to write</param>
+    /// <param name="delimiter">CSV delimiter (default is comma)</param>
+    /// <param name="verbose">Verbose output (default is false)</param>
+    /// <returns>True if successful, false otherwise</returns>
+    public static bool WriteCsv(string csvFilePath, List<Dictionary<string, string>> data, 
+        char delimiter = ',', bool verbose = false)
+    {
+        try
+        {
+            if (data.Count == 0)
+                return true;
+
+            CreatePath(Path.GetDirectoryName(csvFilePath) ?? "");
+
+            var headers = data[0].Keys.ToArray();
+            var lines = new List<string> { string.Join(delimiter, headers) };
+
+            foreach (var row in data)
+            {
+                var values = headers.Select(h => row.ContainsKey(h) ? row[h] : "").ToArray();
+                lines.Add(string.Join(delimiter, values));
+            }
+
+            File.WriteAllLines(csvFilePath, lines);
+
+            if (verbose)
+                Console.WriteLine($"> wrote {data.Count} rows to {GetFileBaseName(csvFilePath, true)}");
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"! error writing CSV {csvFilePath}: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Get the current timestamp in various formats
+    /// </summary>
+    /// <param name="format">Format string ("iso", "filename", "unix", or custom format)</param>
+    /// <returns>Formatted timestamp string</returns>
+    public static string GetTimestamp(string format = "iso")
+    {
+        var now = DateTime.Now;
+        
+        return format.ToLower() switch
+        {
+            "iso" => now.ToString("yyyy-MM-dd HH:mm:ss"),
+            "filename" => now.ToString("yyyyMMdd_HHmmss"),
+            "unix" => ((DateTimeOffset)now).ToUnixTimeSeconds().ToString(),
+            "utc" => now.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss UTC"),
+            _ => now.ToString(format)
+        };
+    }
+
+    /// <summary>
+    /// Retry an operation with exponential backoff
+    /// </summary>
+    /// <param name="operation">Operation to retry</param>
+    /// <param name="maxRetries">Maximum number of retries (default is 3)</param>
+    /// <param name="baseDelayMs">Base delay in milliseconds (default is 1000)</param>
+    /// <param name="verbose">Verbose output (default is false)</param>
+    /// <returns>True if operation succeeded, false otherwise</returns>
+    public static async Task<bool> RetryOperation(Func<Task<bool>> operation, int maxRetries = 3, 
+        int baseDelayMs = 1000, bool verbose = false)
+    {
+        for (int attempt = 1; attempt <= maxRetries; attempt++)
+        {
+            try
+            {
+                if (verbose)
+                    Console.WriteLine($"> attempt {attempt}/{maxRetries}");
+                    
+                if (await operation())
+                    return true;
+            }
+            catch (Exception ex)
+            {
+                if (verbose)
+                    Console.WriteLine($"! attempt {attempt} failed: {ex.Message}");
+            }
+
+            if (attempt < maxRetries)
+            {
+                var delay = baseDelayMs * (int)Math.Pow(2, attempt - 1);
+                if (verbose)
+                    Console.WriteLine($"> waiting {delay}ms before retry...");
+                await Task.Delay(delay);
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Retry a synchronous operation with exponential backoff
+    /// </summary>
+    /// <param name="operation">Operation to retry</param>
+    /// <param name="maxRetries">Maximum number of retries (default is 3)</param>
+    /// <param name="baseDelayMs">Base delay in milliseconds (default is 1000)</param>
+    /// <param name="verbose">Verbose output (default is false)</param>
+    /// <returns>True if operation succeeded, false otherwise</returns>
+    public static bool RetryOperationSync(Func<bool> operation, int maxRetries = 3, 
+        int baseDelayMs = 1000, bool verbose = false)
+    {
+        for (int attempt = 1; attempt <= maxRetries; attempt++)
+        {
+            try
+            {
+                if (verbose)
+                    Console.WriteLine($"> attempt {attempt}/{maxRetries}");
+                    
+                if (operation())
+                    return true;
+            }
+            catch (Exception ex)
+            {
+                if (verbose)
+                    Console.WriteLine($"! attempt {attempt} failed: {ex.Message}");
+            }
+
+            if (attempt < maxRetries)
+            {
+                var delay = baseDelayMs * (int)Math.Pow(2, attempt - 1);
+                if (verbose)
+                    Console.WriteLine($"> waiting {delay}ms before retry...");
+                Thread.Sleep(delay);
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Calculate simple hash of a string using SHA256
+    /// </summary>
+    /// <param name="input">Input string</param>
+    /// <param name="useShortHash">Return short hash (first 8 characters) instead of full hash</param>
+    /// <returns>Hash string</returns>
+    public static string CalculateHash(string input, bool useShortHash = false)
+    {
+        try
+        {
+            using var sha256 = System.Security.Cryptography.SHA256.Create();
+            var bytes = Encoding.UTF8.GetBytes(input);
+            var hashBytes = sha256.ComputeHash(bytes);
+            var hash = Convert.ToHexString(hashBytes).ToLower();
+            
+            return useShortHash ? hash[..8] : hash;
+        }
+        catch
+        {
+            return "";
+        }
+    }
+
+    /// <summary>
+    /// Check if a string is a valid email address
+    /// </summary>
+    /// <param name="email">Email string to validate</param>
+    /// <returns>True if valid email, false otherwise</returns>
+    public static bool IsValidEmail(string email)
+    {
+        try
+        {
+            var addr = new System.Net.Mail.MailAddress(email);
+            return addr.Address == email;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Check if a string is a valid URL
+    /// </summary>
+    /// <param name="url">URL string to validate</param>
+    /// <returns>True if valid URL, false otherwise</returns>
+    public static bool IsValidUrl(string url)
+    {
+        return Uri.TryCreate(url, UriKind.Absolute, out var result) && 
+               (result.Scheme == Uri.UriSchemeHttp || result.Scheme == Uri.UriSchemeHttps);
+    }
+
+    /// <summary>
+    /// Convert a string to title case (first letter of each word capitalized)
+    /// </summary>
+    /// <param name="input">Input string</param>
+    /// <returns>Title case string</returns>
+    public static string ToTitleCase(string input)
+    {
+        if (string.IsNullOrEmpty(input))
+            return input;
+
+        var words = input.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        for (int i = 0; i < words.Length; i++)
+        {
+            if (words[i].Length > 0)
+            {
+                words[i] = char.ToUpper(words[i][0]) + 
+                          (words[i].Length > 1 ? words[i][1..].ToLower() : "");
+            }
+        }
+        return string.Join(" ", words);
+    }
+
+    /// <summary>
+    /// Slugify a string (make it URL-friendly)
+    /// </summary>
+    /// <param name="input">Input string</param>
+    /// <param name="maxLength">Maximum length of the slug (default is 50)</param>
+    /// <returns>Slugified string</returns>
+    public static string Slugify(string input, int maxLength = 50)
+    {
+        if (string.IsNullOrEmpty(input))
+            return "";
+
+        var slug = input.ToLower()
+                        .Replace(" ", "-")
+                        .Replace("_", "-");
+
+        // Remove invalid characters
+        var validChars = slug.Where(c => char.IsLetterOrDigit(c) || c == '-').ToArray();
+        slug = new string(validChars);
+
+        // Remove multiple consecutive dashes
+        while (slug.Contains("--"))
+            slug = slug.Replace("--", "-");
+
+        // Trim dashes from start and end
+        slug = slug.Trim('-');
+
+        // Limit length
+        if (slug.Length > maxLength)
+            slug = slug[..maxLength].TrimEnd('-');
+
+        return slug;
+    }
+
+    /// <summary>
+    /// Generate a simple UUID-like string
+    /// </summary>
+    /// <param name="includeHyphens">Include hyphens in the UUID format (default is true)</param>
+    /// <returns>UUID string</returns>
+    public static string GenerateUuid(bool includeHyphens = true)
+    {
+        var guid = Guid.NewGuid().ToString();
+        return includeHyphens ? guid : guid.Replace("-", "");
+    }
+
+    /// <summary>
+    /// Convert seconds to human-readable duration
+    /// </summary>
+    /// <param name="seconds">Duration in seconds</param>
+    /// <param name="includeMilliseconds">Include milliseconds in output (default is false)</param>
+    /// <returns>Human-readable duration string</returns>
+    public static string FormatDuration(double seconds, bool includeMilliseconds = false)
+    {
+        var timeSpan = TimeSpan.FromSeconds(seconds);
+        
+        if (timeSpan.TotalDays >= 1)
+            return $"{(int)timeSpan.TotalDays}d {timeSpan.Hours}h {timeSpan.Minutes}m {timeSpan.Seconds}s";
+        else if (timeSpan.TotalHours >= 1)
+            return $"{timeSpan.Hours}h {timeSpan.Minutes}m {timeSpan.Seconds}s";
+        else if (timeSpan.TotalMinutes >= 1)
+            return $"{timeSpan.Minutes}m {timeSpan.Seconds}s";
+        else if (includeMilliseconds && timeSpan.TotalSeconds < 1)
+            return $"{timeSpan.TotalMilliseconds:F0}ms";
+        else
+            return $"{timeSpan.TotalSeconds:F1}s";
+    }
+
+    /// <summary>
+    /// Find files by pattern with advanced options
+    /// </summary>
+    /// <param name="directory">Directory to search</param>
+    /// <param name="pattern">Search pattern (supports wildcards)</param>
+    /// <param name="recursive">Search subdirectories (default is true)</param>
+    /// <param name="includeHidden">Include hidden files (default is false)</param>
+    /// <param name="maxDepth">Maximum depth for recursive search (default is -1 for unlimited)</param>
+    /// <returns>List of matching file paths</returns>
+    public static List<string> FindFiles(string directory, string pattern = "*", bool recursive = true, 
+        bool includeHidden = false, int maxDepth = -1)
+    {
+        var results = new List<string>();
+        
+        try
+        {
+            FindFilesRecursive(directory, pattern, recursive, includeHidden, maxDepth, 0, results);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"! error finding files: {ex.Message}");
+        }
+        
+        return results;
+    }
+
+    private static void FindFilesRecursive(string directory, string pattern, bool recursive, 
+        bool includeHidden, int maxDepth, int currentDepth, List<string> results)
+    {
+        if (maxDepth >= 0 && currentDepth > maxDepth)
+            return;
+
+        try
+        {
+            // Get files in current directory
+            var files = Directory.GetFiles(directory, pattern);
+            foreach (var file in files)
+            {
+                if (!includeHidden && IsHiddenFile(file))
+                    continue;
+                    
+                results.Add(file);
+            }
+
+            // Recursively search subdirectories
+            if (recursive)
+            {
+                var subdirectories = Directory.GetDirectories(directory);
+                foreach (var subdir in subdirectories)
+                {
+                    if (!includeHidden && IsHiddenFile(subdir))
+                        continue;
+                        
+                    FindFilesRecursive(subdir, pattern, recursive, includeHidden, 
+                                     maxDepth, currentDepth + 1, results);
+                }
+            }
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Skip directories we don't have permission to access
+        }
+    }
+
+    private static bool IsHiddenFile(string path)
+    {
+        try
+        {
+            var attributes = File.GetAttributes(path);
+            return attributes.HasFlag(FileAttributes.Hidden);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Create a simple log entry with timestamp
+    /// </summary>
+    /// <param name="message">Log message</param>
+    /// <param name="logFile">Log file path (optional)</param>
+    /// <param name="level">Log level (default is "INFO")</param>
+    /// <param name="verbose">Also print to console (default is true)</param>
+    /// <returns>True if successful, false otherwise</returns>
+    public static bool Log(string message, string? logFile = null, string level = "INFO", bool verbose = true)
+    {
+        var timestamp = GetTimestamp("iso");
+        var logEntry = $"[{timestamp}] [{level}] {message}";
+        
+        if (verbose)
+            Console.WriteLine(logEntry);
+            
+        if (!string.IsNullOrEmpty(logFile))
+        {
+            try
+            {
+                CreatePath(Path.GetDirectoryName(logFile) ?? "");
+                File.AppendAllText(logFile, logEntry + Environment.NewLine);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"! error writing to log file {logFile}: {ex.Message}");
+                return false;
+            }
+        }
+        
+        return true;
+    }
+
+    /// <summary>
+    /// Merge multiple text files into one file
+    /// </summary>
+    /// <param name="inputFiles">List of input file paths</param>
+    /// <param name="outputFile">Output file path</param>
+    /// <param name="separator">Separator between files (default is empty line)</param>
+    /// <param name="includeFilenames">Include filename headers (default is false)</param>
+    /// <param name="verbose">Verbose output (default is true)</param>
+    /// <returns>True if successful, false otherwise</returns>
+    public static bool MergeTextFiles(List<string> inputFiles, string outputFile, 
+        string separator = "\n", bool includeFilenames = false, bool verbose = true)
+    {
+        try
+        {
+            CreatePath(Path.GetDirectoryName(outputFile) ?? "");
+            
+            using var writer = new StreamWriter(outputFile);
+            
+            for (int i = 0; i < inputFiles.Count; i++)
+            {
+                var inputFile = inputFiles[i];
+                
+                if (!File.Exists(inputFile))
+                {
+                    if (verbose)
+                        Console.WriteLine($"! skipping missing file: {inputFile}");
+                    continue;
+                }
+                
+                if (includeFilenames)
+                {
+                    writer.WriteLine($"=== {GetFileBaseName(inputFile, true)} ===");
+                }
+                
+                var content = File.ReadAllText(inputFile);
+                writer.Write(content);
+                
+                if (i < inputFiles.Count - 1)
+                    writer.Write(separator);
+                    
+                if (verbose)
+                    Console.WriteLine($"> merged {GetFileBaseName(inputFile, true)}");
+            }
+            
+            if (verbose)
+                Console.WriteLine($"> created merged file: {GetFileBaseName(outputFile, true)}");
+                
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"! error merging files: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Simple HTTP GET request with timeout and headers support
+    /// </summary>
+    /// <param name="url">URL to request</param>
+    /// <param name="timeoutSeconds">Timeout in seconds (default is 30)</param>
+    /// <param name="headers">Optional headers dictionary</param>
+    /// <param name="verbose">Verbose output (default is false)</param>
+    /// <returns>Response content as string, or null if failed</returns>
+    public static async Task<string?> HttpGet(string url, int timeoutSeconds = 30, 
+        Dictionary<string, string>? headers = null, bool verbose = false)
+    {
+        try
+        {
+            using var client = new HttpClient();
+            client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+            
+            if (headers != null)
+            {
+                foreach (var header in headers)
+                    client.DefaultRequestHeaders.Add(header.Key, header.Value);
+            }
+            
+            if (verbose)
+                Console.WriteLine($"> GET {url}");
+                
+            var response = await client.GetAsync(url);
+            var content = await response.Content.ReadAsStringAsync();
+            
+            if (verbose)
+                Console.WriteLine($"> received {content.Length} characters");
+                
+            return content;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"! HTTP GET error: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Simple HTTP POST request with JSON payload
+    /// </summary>
+    /// <param name="url">URL to post to</param>
+    /// <param name="jsonPayload">JSON payload as string</param>
+    /// <param name="timeoutSeconds">Timeout in seconds (default is 30)</param>
+    /// <param name="headers">Optional headers dictionary</param>
+    /// <param name="verbose">Verbose output (default is false)</param>
+    /// <returns>Response content as string, or null if failed</returns>
+    public static async Task<string?> HttpPost(string url, string jsonPayload, int timeoutSeconds = 30, 
+        Dictionary<string, string>? headers = null, bool verbose = false)
+    {
+        try
+        {
+            using var client = new HttpClient();
+            client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+            
+            if (headers != null)
+            {
+                foreach (var header in headers)
+                    client.DefaultRequestHeaders.Add(header.Key, header.Value);
+            }
+            
+            var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+            
+            if (verbose)
+                Console.WriteLine($"> POST {url} with {jsonPayload.Length} characters");
+                
+            var response = await client.PostAsync(url, content);
+            var responseContent = await response.Content.ReadAsStringAsync();
+            
+            if (verbose)
+                Console.WriteLine($"> received {responseContent.Length} characters");
+                
+            return responseContent;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"! HTTP POST error: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Check if a URL is reachable (ping-like test)
+    /// </summary>
+    /// <param name="url">URL to test</param>
+    /// <param name="timeoutSeconds">Timeout in seconds (default is 10)</param>
+    /// <param name="verbose">Verbose output (default is false)</param>
+    /// <returns>True if reachable, false otherwise</returns>
+    public static async Task<bool> IsUrlReachable(string url, int timeoutSeconds = 10, bool verbose = false)
+    {
+        try
+        {
+            using var client = new HttpClient();
+            client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+            
+            if (verbose)
+                Console.WriteLine($"> testing connectivity to {url}");
+                
+            var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+            var isReachable = response.IsSuccessStatusCode;
+            
+            if (verbose)
+                Console.WriteLine($"> {url} is {(isReachable ? "reachable" : "not reachable")}");
+                
+            return isReachable;
+        }
+        catch (Exception ex)
+        {
+            if (verbose)
+                Console.WriteLine($"> {url} is not reachable: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Split a large list into smaller chunks
+    /// </summary>
+    /// <param name="source">Source list</param>
+    /// <param name="chunkSize">Size of each chunk</param>
+    /// <returns>Enumerable of chunks</returns>
+    public static IEnumerable<List<T>> ChunkList<T>(IEnumerable<T> source, int chunkSize)
+    {
+        var list = source.ToList();
+        for (int i = 0; i < list.Count; i += chunkSize)
+        {
+            yield return list.Skip(i).Take(chunkSize).ToList();
+        }
+    }
+
+    /// <summary>
+    /// Measure execution time of an operation
+    /// </summary>
+    /// <param name="operation">Operation to measure</param>
+    /// <param name="operationName">Name of the operation for logging</param>
+    /// <param name="verbose">Verbose output (default is true)</param>
+    /// <returns>Execution time in milliseconds</returns>
+    public static long MeasureExecutionTime(Action operation, string operationName = "operation", bool verbose = true)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        
+        try
+        {
+            if (verbose)
+                Console.WriteLine($"> starting {operationName}...");
+                
+            operation();
+            
+            stopwatch.Stop();
+            var elapsed = stopwatch.ElapsedMilliseconds;
+            
+            if (verbose)
+                Console.WriteLine($"> {operationName} completed in {elapsed}ms");
+                
+            return elapsed;
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            Console.WriteLine($"! {operationName} failed after {stopwatch.ElapsedMilliseconds}ms: {ex.Message}");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Measure execution time of an async operation
+    /// </summary>
+    /// <param name="operation">Async operation to measure</param>
+    /// <param name="operationName">Name of the operation for logging</param>
+    /// <param name="verbose">Verbose output (default is true)</param>
+    /// <returns>Execution time in milliseconds</returns>
+    public static async Task<long> MeasureExecutionTimeAsync(Func<Task> operation, string operationName = "operation", bool verbose = true)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        
+        try
+        {
+            if (verbose)
+                Console.WriteLine($"> starting {operationName}...");
+                
+            await operation();
+            
+            stopwatch.Stop();
+            var elapsed = stopwatch.ElapsedMilliseconds;
+            
+            if (verbose)
+                Console.WriteLine($"> {operationName} completed in {elapsed}ms");
+                
+            return elapsed;
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            Console.WriteLine($"! {operationName} failed after {stopwatch.ElapsedMilliseconds}ms: {ex.Message}");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Create a simple in-memory cache with expiration
+    /// </summary>
+    /// <param name="key">Cache key</param>
+    /// <param name="value">Value to cache</param>
+    /// <param name="expirationMinutes">Expiration time in minutes (default is 60)</param>
+    public static void CacheSet<T>(string key, T value, int expirationMinutes = 60)
+    {
+        var expiration = DateTime.Now.AddMinutes(expirationMinutes);
+        _cache[key] = (value, expiration);
+    }
+
+    /// <summary>
+    /// Get a value from the simple in-memory cache
+    /// </summary>
+    /// <param name="key">Cache key</param>
+    /// <returns>Cached value or default if not found/expired</returns>
+    public static T? CacheGet<T>(string key)
+    {
+        if (_cache.TryGetValue(key, out var cached))
+        {
+            if (DateTime.Now <= cached.Expiration)
+            {
+                return cached.Value is T value ? value : default;
+            }
+            else
+            {
+                _cache.Remove(key); // Remove expired entry
+            }
+        }
+        return default;
+    }
+
+    /// <summary>
+    /// Clear all cached values
+    /// </summary>
+    public static void CacheClear()
+    {
+        _cache.Clear();
+    }
+
+    private static readonly Dictionary<string, (object? Value, DateTime Expiration)> _cache = new();
+
+    /// <summary>
+    /// Convert a file path to use the correct directory separators for the current OS
+    /// </summary>
+    /// <param name="path">File path</param>
+    /// <returns>Normalized path</returns>
+    public static string NormalizePath(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+            return path;
+            
+        return Path.GetFullPath(path.Replace('\\', Path.DirectorySeparatorChar)
+                                   .Replace('/', Path.DirectorySeparatorChar));
+    }
+
+    /// <summary>
+    /// Safe string format with error handling
+    /// </summary>
+    /// <param name="format">Format string</param>
+    /// <param name="args">Format arguments</param>
+    /// <returns>Formatted string or original format string if formatting fails</returns>
+    public static string SafeFormat(string format, params object[] args)
+    {
+        try
+        {
+            return string.Format(format, args);
+        }
+        catch
+        {
+            return format;
+        }
+    }
 }
